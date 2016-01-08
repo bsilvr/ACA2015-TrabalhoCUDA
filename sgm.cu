@@ -132,6 +132,13 @@ void iterate_direction_dirxpos(const int dirx, const int *left_image,
   }
 }
 
+__global__ void iterate_direction_dirxpos_device(const int dirx, const int *left_image,
+    const int* costs, int *accumulated_costs,
+    const int nx, const int ny, const int disp_range)
+{
+
+}
+
 void iterate_direction_dirypos(const int diry, const int *left_image,
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range )
@@ -154,6 +161,13 @@ void iterate_direction_dirypos(const int diry, const int *left_image,
           }
       }
   }
+}
+
+__global__ void iterate_direction_dirypos_device(const int dirx, const int *left_image,
+    const int* costs, int *accumulated_costs,
+    const int nx, const int ny, const int disp_range)
+{
+
 }
 
 void iterate_direction_dirxneg(const int dirx, const int *left_image,
@@ -180,6 +194,13 @@ void iterate_direction_dirxneg(const int dirx, const int *left_image,
   }
 }
 
+__global__ void iterate_direction_dirxneg_device(const int dirx, const int *left_image,
+    const int* costs, int *accumulated_costs,
+    const int nx, const int ny, const int disp_range)
+{
+
+}
+
 void iterate_direction_diryneg(const int diry, const int *left_image,
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range )
@@ -204,6 +225,13 @@ void iterate_direction_diryneg(const int diry, const int *left_image,
   }
 }
 
+__global__ void iterate_direction_diryneg_device(const int dirx, const int *left_image,
+    const int* costs, int *accumulated_costs,
+    const int nx, const int ny, const int disp_range)
+{
+
+}
+
 void iterate_direction( const int dirx, const int diry, const int *left_image,
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range )
@@ -213,20 +241,50 @@ void iterate_direction( const int dirx, const int diry, const int *left_image,
       // LEFT MOST EDGE
       // Process every pixel along this edge
       iterate_direction_dirxpos(dirx,left_image,costs,accumulated_costs, nx, ny, disp_range);
-  }
-  else if ( diry > 0 ) {
+    }
+    else if ( diry > 0 ) {
       // TOP MOST EDGE
       // Process every pixel along this edge only if dirx ==
       // 0. Otherwise skip the top left most pixel
       iterate_direction_dirypos(diry,left_image,costs,accumulated_costs, nx, ny, disp_range);
-  }
-  else if ( dirx < 0 ) {
+    }
+    else if ( dirx < 0 ) {
       // RIGHT MOST EDGE
       // Process every pixel along this edge only if diry ==
       // 0. Otherwise skip the top right most pixel
       iterate_direction_dirxneg(dirx,left_image,costs,accumulated_costs, nx, ny, disp_range);
+    }
+    else if ( diry < 0 ) {
+      // BOTTOM MOST EDGE
+      // Process every pixel along this edge only if dirx ==
+      // 0. Otherwise skip the bottom left and bottom right pixel
+      iterate_direction_diryneg(diry,left_image,costs,accumulated_costs, nx, ny, disp_range);
   }
-  else if ( diry < 0 ) {
+}
+
+void iterate_direction_device( const int dirx, const int diry, const int *left_image,
+    const int* costs, int *accumulated_costs,
+    const int nx, const int ny, const int disp_range )
+{
+    // Walk along the edges in a clockwise fashion
+    if ( dirx > 0 ) {
+      // LEFT MOST EDGE
+      // Process every pixel along this edge
+      iterate_direction_dirxpos(dirx,left_image,costs,accumulated_costs, nx, ny, disp_range);
+    }
+    else if ( diry > 0 ) {
+      // TOP MOST EDGE
+      // Process every pixel along this edge only if dirx ==
+      // 0. Otherwise skip the top left most pixel
+      iterate_direction_dirypos(diry,left_image,costs,accumulated_costs, nx, ny, disp_range);
+    }
+    else if ( dirx < 0 ) {
+      // RIGHT MOST EDGE
+      // Process every pixel along this edge only if diry ==
+      // 0. Otherwise skip the top right most pixel
+      iterate_direction_dirxneg(dirx,left_image,costs,accumulated_costs, nx, ny, disp_range);
+    }
+    else if ( diry < 0 ) {
       // BOTTOM MOST EDGE
       // Process every pixel along this edge only if dirx ==
       // 0. Otherwise skip the bottom left and bottom right pixel
@@ -332,8 +390,6 @@ void create_disparity_view( const int *accumulated_costs , int * disp_image,
 
     determine_costs(h_leftIm, h_rightIm, costs, nx, ny, disp_range);
 
-    printf("HOST -> %d\n", costs[10]);
-
     int *accumulated_costs = (int *) calloc(nx*ny*disp_range,sizeof(int));
     int *dir_accumulated_costs = (int *) calloc(nx*ny*disp_range,sizeof(int));
     if (accumulated_costs == NULL || dir_accumulated_costs == NULL) {
@@ -419,8 +475,6 @@ void sgmDevice( const int *h_leftIm, const int *h_rightIm,
 
     //determine_costs(h_leftIm, h_rightIm, costs, nx, ny, disp_range);
     // End Determine Costs
-    printf("DEVICE -> %d\n", costs[10]);
-
 
     int *accumulated_costs = (int *) calloc(nx*ny*disp_range,sizeof(int));
     int *dir_accumulated_costs = (int *) calloc(nx*ny*disp_range,sizeof(int));
