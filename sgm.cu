@@ -18,7 +18,7 @@
 // includes, project
 #include <cutil_inline.h>
 
-#define NPP_MAX_32U 2147483647
+#define NPP_MAX_32S 2147483647
 
 #define MMAX_BRIGHTNESS 255
 
@@ -160,16 +160,14 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
         //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
         ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
     }
-    else {
-        // to evaluate_path
-        //memcpy(curr_cost, local, sizeof(int)*disp_range);
-        //printf("ELSE -> i==%d, j==%d, d==%d\n", i, j, d);
+    else if (d==0){
+        //printf("D -> i==%d, j==%d, d==%d\n", i, j, d);
+        //printf("D -> %d\n", d);
         evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
         &COSTS(i,j,0),
         abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
         &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range);
     }
-    // no else
 
 }
 
@@ -418,30 +416,58 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
                                         int path_intensity_gradient, int *curr_cost ,
                                         const int nx, const int ny, const int disp_range)
 {
+    //int d = threadIdx.x;
+    // memcpy(&curr_cost[d], &local[d], sizeof(int));
+
+    // int e_smooth = NPP_MAX_32S;
+    // for ( int d_p = 0; d_p < disp_range; d_p++ ) {
+    //     if ( d_p - d == 0 ) {
+    //         // No penality
+    //         e_smooth = MMIN(e_smooth,prior[d_p]);
+    //     } else if ( abs(d_p - d) == 1 ) {
+    //         // Small penality
+    //         e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
+    //     } else {
+    //         // Large penality
+    //         e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
+    // path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
+    //     }
+    // }
+    // curr_cost[d] += e_smooth;
+
+    // int min = NPP_MAX_32S;
+    // if (prior[d]<min) min=prior[d];
+
+
+    // curr_cost[d]-=min;
+
     memcpy(curr_cost, local, sizeof(int)*disp_range);
-    d = threadIdx.x
 
-    int e_smooth = NPP_MAX_32U;
-    for ( int d_p = 0; d_p < disp_range; d_p++ ) {
-        if ( d_p - d == 0 ) {
-            // No penality
-            e_smooth = MMIN(e_smooth,prior[d_p]);
-        } else if ( abs(d_p - d) == 1 ) {
-            // Small penality
-            e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
-        } else {
-            // Large penality
-            e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
-    path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
+    for ( int d = 0; d < disp_range; d++ ) {
+        int e_smooth = NPP_MAX_32S;
+        for ( int d_p = 0; d_p < disp_range; d_p++ ) {
+            if ( d_p - d == 0 ) {
+                // No penality
+                e_smooth = MMIN(e_smooth,prior[d_p]);
+            } else if ( abs(d_p - d) == 1 ) {
+                // Small penality
+                e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
+            } else {
+                // Large penality
+                e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
+        path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
+            }
         }
+        curr_cost[d] += e_smooth;
     }
-    curr_cost[d] += e_smooth;
 
-    int min = NPP_MAX_32U;
-    if (prior[d]<min) min=prior[d];
-
-
-    curr_cost[d]-=min;
+    int min = NPP_MAX_32S;
+    for ( int d = 0; d < disp_range; d++ ) {
+        if (prior[d]<min) min=prior[d];
+    }
+    for ( int d = 0; d < disp_range; d++ ) {
+        curr_cost[d]-=min;
+    }
 
 }
 
@@ -498,6 +524,8 @@ void create_disparity_view( const int *accumulated_costs , int * disp_image,
       iterate_direction( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
       inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
   }
+  printf("HOST ->%d\n", dir_accumulated_costs[100]);
+
   dirx=0;
   for(diry=-1; diry<2; diry++) {
       if(dirx==0 && diry==0) continue;
@@ -584,6 +612,8 @@ void sgmDevice( const int *h_leftIm, const int *h_rightIm,
       iterate_direction_device( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
       inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
     }
+    printf("DEVICE ->%d\n", dir_accumulated_costs[100]);
+
     dirx=0;
     for(diry=-1; diry<2; diry++) {
       if(dirx==0 && diry==0) continue;
