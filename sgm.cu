@@ -160,7 +160,7 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
         //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
         ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
     }
-    else if(d==0) {
+    else {
         // to evaluate_path
         //memcpy(curr_cost, local, sizeof(int)*disp_range);
         //printf("ELSE -> i==%d, j==%d, d==%d\n", i, j, d);
@@ -419,32 +419,29 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
                                         const int nx, const int ny, const int disp_range)
 {
     memcpy(curr_cost, local, sizeof(int)*disp_range);
+    d = threadIdx.x
 
-    for ( int d = 0; d < disp_range; d++ ) {
-        int e_smooth = NPP_MAX_32U;
-        for ( int d_p = 0; d_p < disp_range; d_p++ ) {
-            if ( d_p - d == 0 ) {
-                // No penality
-                e_smooth = MMIN(e_smooth,prior[d_p]);
-            } else if ( abs(d_p - d) == 1 ) {
-                // Small penality
-                e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
-            } else {
-                // Large penality
-                e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
-        path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
-            }
+    int e_smooth = NPP_MAX_32U;
+    for ( int d_p = 0; d_p < disp_range; d_p++ ) {
+        if ( d_p - d == 0 ) {
+            // No penality
+            e_smooth = MMIN(e_smooth,prior[d_p]);
+        } else if ( abs(d_p - d) == 1 ) {
+            // Small penality
+            e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
+        } else {
+            // Large penality
+            e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
+    path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
         }
-        curr_cost[d] += e_smooth;
     }
+    curr_cost[d] += e_smooth;
 
     int min = NPP_MAX_32U;
-    for ( int d = 0; d < disp_range; d++ ) {
-        if (prior[d]<min) min=prior[d];
-    }
-    for ( int d = 0; d < disp_range; d++ ) {
-        curr_cost[d]-=min;
-    }
+    if (prior[d]<min) min=prior[d];
+
+
+    curr_cost[d]-=min;
 
 }
 
