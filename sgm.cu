@@ -157,13 +157,13 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
     int d = threadIdx.x;
 
     if(i==0) {
-        printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
+        //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
         ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
     }
     else if(d==0) {
         // to evaluate_path
         //memcpy(curr_cost, local, sizeof(int)*disp_range);
-        printf("ELSE -> i==%d, j==%d, d==%d\n", i, j, d);
+        //printf("ELSE -> i==%d, j==%d, d==%d\n", i, j, d);
         evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
         &COSTS(i,j,0),
         abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
@@ -419,7 +419,7 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
                                         const int nx, const int ny, const int disp_range)
 {
     memcpy(curr_cost, local, sizeof(int)*disp_range);
-    printf("ENTREI\n");
+
     for ( int d = 0; d < disp_range; d++ ) {
         int e_smooth = NPP_MAX_32U;
         for ( int d_p = 0; d_p < disp_range; d_p++ ) {
@@ -437,7 +437,6 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
         }
         curr_cost[d] += e_smooth;
     }
-    printf("BIG FOR\n");
 
     int min = NPP_MAX_32U;
     for ( int d = 0; d < disp_range; d++ ) {
@@ -446,7 +445,6 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
     for ( int d = 0; d < disp_range; d++ ) {
         curr_cost[d]-=min;
     }
-    printf("SMALL FORS\n");
 
 }
 
