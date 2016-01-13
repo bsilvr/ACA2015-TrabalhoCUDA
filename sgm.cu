@@ -20,6 +20,8 @@
 
 #define MMAX_BRIGHTNESS 255
 
+#define MAX_INT 2147483647
+
 #define PENALTY1 15
 #define PENALTY2 100
 
@@ -73,11 +75,21 @@ void sgmHost(   const int *h_leftIm, const int *h_rightIm,
     const int w, const int h, const int disp_range );
 
 void sgmDevice( const int *h_leftIm, const int *h_rightIm,
-    int *h_dispImD,
+    int *h_dispIm,
     const int w, const int h, const int disp_range );
 
 void usage(char *command);
 
+__global__ void inplace_sum_views_device(int * im1, const int * im2,
+    const int nx, const int ny, const int disp_range);
+    
+__global__ void determine_costs_device(const int *left_image, const int *right_image,
+                                        int *costs, const int nx, const int ny,
+                                        const int disp_range);
+__host__ __device__ int find_min_index_device( const int *v, const int disp_range );
+
+__global__ void create_disparity_view_device( const int *accumulated_costs , int * disp_image,
+    const int nx, const int ny, const int disp_range);
 
 /* functions code */
 
@@ -246,6 +258,17 @@ void inplace_sum_views( int * im1, const int * im2,
   }
 }
 
+
+__global__ void inplace_sum_views_device(const int * im1, const int * im2, int * im1_out,
+    const int nx, const int ny, const int disp_range)
+{
+    int id = (blockIdx.y * disp_range * nx) + (disp_range * blockIdx.x) + threadIdx.x; 
+
+    if(id < nx*ny*disp_range) {
+        im1_out[id] += im2[id];
+    }
+}
+
 int find_min_index( const int *v, const int disp_range )
 {
     int min = std::numeric_limits<int>::max();
@@ -257,6 +280,20 @@ int find_min_index( const int *v, const int disp_range )
       }
   }
   return minind;
+}
+
+__host__ __device__ int find_min_index_device( const int *v, const int disp_range ){
+    
+    int min = MAX_INT;
+    int minind = -1;
+    for (int d=0; d < disp_range; d++) {
+       if(v[d]<min) {
+          min = v[d];
+          minind = d;
+        }
+    }
+    return minind;
+    
 }
 
 void evaluate_path(const int *prior, const int *local,
@@ -301,8 +338,19 @@ void create_disparity_view( const int *accumulated_costs , int * disp_image,
     for ( int i = 0; i < nx; i++ ) {
       DISP_IMAGE(i,j) =
       4 * find_min_index( &ACCUMULATED_COSTS(i,j,0), disp_range );
+    }
   }
 }
+
+__global__ void create_disparity_view_device( const int *accumulated_costs , int * disp_image,
+    const int nx, const int ny, const int disp_range)
+{
+    
+    int id = (blockIdx.y * nx) + blockIdx.x;
+    
+    disp_image[id] = 4 * find_min_index_device( &ACCUMULATED_COSTS(blockIdx.x, blockIdx.y, 0), disp_range );
+    
+    
 }
 
 
@@ -435,20 +483,112 @@ void sgmDevice( const int *h_leftIm, const int *h_rightIm,
       if(dirx==0 && diry==0) continue;
       std::fill(dir_accumulated_costs, dir_accumulated_costs+nx*ny*disp_range, 0);
       iterate_direction( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
-      inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
+      // inplace_sum_views cuda
+       
+      int acumCostsSize = nx*ny*disp_range * sizeof(int);
+      
+      int *devPtr_inAcumCosts;
+      int *devPtr_inDirAcumCosts;
+      int *devPtr_outAcumCosts;
+      
+      cudaMalloc((void**)&devPtr_inAcumCosts, acumCostsSize);
+      cudaMalloc((void**)&devPtr_inDirAcumCosts, acumCostsSize);
+      cudaMalloc((void**)&devPtr_outAcumCosts, acumCostsSize);
+
+      cudaMemcpy(devPtr_inAcumCosts, accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      cudaMemcpy(devPtr_inDirAcumCosts, dir_accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      cudaMemcpy(devPtr_outAcumCosts, accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      
+      int block_x = disp_range;
+      int block_y = 1;
+
+      int grid_x = nx;
+      int grid_y = ny; 
+
+      dim3 block(block_x, block_y);
+      dim3 grid(grid_x, grid_y);
+
+      inplace_sum_views_device <<< grid, block >>>(devPtr_inAcumCosts, devPtr_inDirAcumCosts, devPtr_outAcumCosts, nx, ny, disp_range);
+      
+      cudaMemcpy(accumulated_costs, devPtr_outAcumCosts, acumCostsSize, cudaMemcpyDeviceToHost);
+
+      cudaFree(devPtr_inAcumCosts);
+      cudaFree(devPtr_inDirAcumCosts);
+      cudaFree(devPtr_outAcumCosts);
+
+      /********/
     }
     dirx=0;
     for(diry=-1; diry<2; diry++) {
       if(dirx==0 && diry==0) continue;
       std::fill(dir_accumulated_costs, dir_accumulated_costs+nx*ny*disp_range, 0);
       iterate_direction( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
-      inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
+      // inplace_sum_views cuda
+       
+      int acumCostsSize = nx*ny*disp_range * sizeof(int);
+      
+      int *devPtr_inAcumCosts;
+      int *devPtr_inDirAcumCosts;
+      int *devPtr_outAcumCosts;
+      
+      cudaMalloc((void**)&devPtr_inAcumCosts, acumCostsSize);
+      cudaMalloc((void**)&devPtr_inDirAcumCosts, acumCostsSize);
+      cudaMalloc((void**)&devPtr_outAcumCosts, acumCostsSize);
+
+      cudaMemcpy(devPtr_inAcumCosts, accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      cudaMemcpy(devPtr_inDirAcumCosts, dir_accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      cudaMemcpy(devPtr_outAcumCosts, accumulated_costs, acumCostsSize, cudaMemcpyHostToDevice);
+      
+      int block_x = disp_range;
+      int block_y = 1;
+
+      int grid_x = nx;
+      int grid_y = ny; 
+
+      dim3 block(block_x, block_y);
+      dim3 grid(grid_x, grid_y);
+
+      inplace_sum_views_device <<< grid, block >>>(devPtr_inAcumCosts, devPtr_inDirAcumCosts, devPtr_outAcumCosts, nx, ny, disp_range);
+      
+      cudaMemcpy(accumulated_costs, devPtr_outAcumCosts, acumCostsSize, cudaMemcpyDeviceToHost);
+
+      cudaFree(devPtr_inAcumCosts);
+      cudaFree(devPtr_inDirAcumCosts);
+      cudaFree(devPtr_outAcumCosts);
+
+      
+      /********/
     }
 
     free(costs);
     free(dir_accumulated_costs);
+      
+    imageSize = nx * ny * sizeof(int);
+    costsSize = nx*ny*disp_range * sizeof(int);
 
-    create_disparity_view( accumulated_costs, h_dispIm, nx, ny, disp_range );
+    int *devPtr_inDispImage;
+    int *devPtr_inCosts;
+
+    cudaMalloc((void**)&devPtr_inDispImage, imageSize);
+    cudaMalloc((void**)&devPtr_inCosts, costsSize);
+
+    cudaMemcpy(devPtr_inDispImage, h_dispIm, imageSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devPtr_inCosts, accumulated_costs, costsSize, cudaMemcpyHostToDevice);
+
+    block_x = 1;
+    block_y = 1;
+
+    grid_x = nx;
+    grid_y = ny;
+
+    dim3 block1(block_x, block_y);
+    dim3 grid1(grid_x, grid_y);
+
+    create_disparity_view_device <<< grid1, block1 >>>(devPtr_inCosts, devPtr_inDispImage, nx, ny, disp_range);
+    cudaMemcpy(h_dispIm, devPtr_inDispImage, imageSize, cudaMemcpyDeviceToHost);
+
+    cudaFree(devPtr_inDispImage);
+    cudaFree(devPtr_inCosts);
 
     free(accumulated_costs);
 }
