@@ -90,7 +90,7 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
 
 __device__ void evaluate_path_device(const int *prior, const int *local,
                                         int path_intensity_gradient, int *curr_cost ,
-                                        const int nx, const int ny, const int disp_range, int d);
+                                        const int nx, const int ny, const int disp_range);
 
 
 /* functions code */
@@ -150,38 +150,24 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range)
 {
+    const int WIDTH = nx;
+
     int j = blockIdx.y;
-    //int d = threadIdx.x;
+    int d = threadIdx.x;
 
-    for(int i = 0; i < nx; i++ ) {
-
-        // if(i==0) {
-        //     //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
-        //     ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
-        // }
-        // else {
-        //     //printf("D -> i==%d, j==%d, d==%d\n", i, j, d);
-        //     //printf("D -> %d\n", d);
-        //     evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
-        //     &COSTS(i,j,0),
-        //     abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
-        //     &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range);
-        // }
-
+    for(int i = 0; i < WIDTH; i++ ) {
         if(i==0) {
-              for ( int d = 0; d < disp_range; d++ ) {
-                  ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
-              }
+            //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
+            ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
         }
         else {
-            for ( int d = 0; d < disp_range; d++ ) {
-              evaluate_path_device( &ACCUMULATED_COSTS(i-dirx,j,0),
-               &COSTS(i,j,0),
-               abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
-               &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range, d);
-            }
+            //printf("D -> i==%d, j==%d, d==%d\n", i, j, d);
+            //printf("D -> %d\n", d);
+            evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
+            &COSTS(i,j,0),
+            abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
+            &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range);
         }
-
     }
 
 }
@@ -207,14 +193,29 @@ void iterate_direction_dirypos(const int diry, const int *left_image,
                &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range );
           }
       }
-  }
+    }
 }
 
-__global__ void iterate_direction_dirypos_device(const int dirx, const int *left_image,
+__global__ void iterate_direction_dirypos_device(const int diry, const int *left_image,
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range)
 {
+    const int HEIGHT = ny;
 
+    int i = blockIdx.x;
+    int d = threadIdx.x;
+
+    for ( int j = 0; j < HEIGHT; j++ ) {
+        if(j==0) {
+            ACCUMULATED_COSTS(i,0,d) += COSTS(i,0,d);
+        }
+        else {
+            evaluate_path_device( &ACCUMULATED_COSTS(i,j-diry,0),
+               &COSTS(i,j,0),
+               abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i,j-diry)),
+               &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range );
+        }
+    }
 }
 
 void iterate_direction_dirxneg(const int dirx, const int *left_image,
@@ -245,7 +246,22 @@ __global__ void iterate_direction_dirxneg_device(const int dirx, const int *left
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range)
 {
+    int j = blockIdx.y;
+    int d = threadIdx.x;
 
+    const int WIDTH = nx;
+
+    for ( int i = WIDTH-1; i >= 0; i-- ) {
+        if(i==WIDTH-1) {
+            ACCUMULATED_COSTS(WIDTH-1,j,d) += COSTS(WIDTH-1,j,d);
+        }
+        else {
+            evaluate_path_device( &ACCUMULATED_COSTS(i-dirx,j,0),
+               &COSTS(i,j,0),
+               abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)),
+               &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range );
+        }
+    }
 }
 
 void iterate_direction_diryneg(const int diry, const int *left_image,
@@ -269,14 +285,29 @@ void iterate_direction_diryneg(const int diry, const int *left_image,
                  &ACCUMULATED_COSTS(i,j,0) , nx, ny, disp_range);
           }
       }
-  }
+    }
 }
 
-__global__ void iterate_direction_diryneg_device(const int dirx, const int *left_image,
+__global__ void iterate_direction_diryneg_device(const int diry, const int *left_image,
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range)
 {
+    int i = blockIdx.x;
+    int d = threadIdx.x;
 
+    const int HEIGHT = ny;
+
+    for ( int j = HEIGHT-1; j >= 0; j-- ) {
+        if(j==HEIGHT-1) {
+            ACCUMULATED_COSTS(i,HEIGHT-1,d) += COSTS(i,HEIGHT-1,d);
+        }
+        else {
+            evaluate_path_device( &ACCUMULATED_COSTS(i,j-diry,0),
+                 &COSTS(i,j,0),
+                 abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i,j-diry)),
+                 &ACCUMULATED_COSTS(i,j,0) , nx, ny, disp_range);
+        }
+    }
 }
 
 void iterate_direction( const int dirx, const int diry, const int *left_image,
@@ -353,19 +384,109 @@ void iterate_direction_device( const int dirx, const int diry, const int *left_i
         // TOP MOST EDGE
         // Process every pixel along this edge only if dirx ==
         // 0. Otherwise skip the top left most pixel
-        iterate_direction_dirypos(diry,left_image,costs,accumulated_costs, nx, ny, disp_range);
+        int imageSize = nx * ny * sizeof(int);
+        int costsSize = nx*ny*disp_range * sizeof(int);
+
+        int *devPtr_inLeftImage;
+        int *devPtr_AccumulatedCosts;
+        int *devPtr_Costs;
+
+        cudaMalloc((void**)&devPtr_inLeftImage, imageSize);
+        cudaMalloc((void**)&devPtr_AccumulatedCosts, costsSize);
+        cudaMalloc((void**)&devPtr_Costs, costsSize);
+
+        cudaMemcpy(devPtr_inLeftImage, left_image, imageSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_AccumulatedCosts, accumulated_costs, costsSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_Costs, costs, costsSize, cudaMemcpyHostToDevice);
+
+        int block_x = disp_range;
+        int block_y = 1;
+
+        int grid_x = nx;
+        int grid_y = 1;
+
+        dim3 block(block_x, block_y);
+        dim3 grid(grid_x, grid_y);
+
+        iterate_direction_dirypos_device <<< grid, block >>> (diry,devPtr_inLeftImage,devPtr_Costs,devPtr_AccumulatedCosts, nx, ny, disp_range);
+
+        cudaMemcpy(accumulated_costs, devPtr_AccumulatedCosts, costsSize, cudaMemcpyDeviceToHost);
+
+        cudaFree(devPtr_inLeftImage);
+        cudaFree(devPtr_AccumulatedCosts);
+        cudaFree(devPtr_Costs);
     }
     else if ( dirx < 0 ) {
         // RIGHT MOST EDGE
         // Process every pixel along this edge only if diry ==
         // 0. Otherwise skip the top right most pixel
-        iterate_direction_dirxneg(dirx,left_image,costs,accumulated_costs, nx, ny, disp_range);
+        int imageSize = nx * ny * sizeof(int);
+        int costsSize = nx*ny*disp_range * sizeof(int);
+
+        int *devPtr_inLeftImage;
+        int *devPtr_AccumulatedCosts;
+        int *devPtr_Costs;
+
+        cudaMalloc((void**)&devPtr_inLeftImage, imageSize);
+        cudaMalloc((void**)&devPtr_AccumulatedCosts, costsSize);
+        cudaMalloc((void**)&devPtr_Costs, costsSize);
+
+        cudaMemcpy(devPtr_inLeftImage, left_image, imageSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_AccumulatedCosts, accumulated_costs, costsSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_Costs, costs, costsSize, cudaMemcpyHostToDevice);
+
+        int block_x = disp_range;
+        int block_y = 1;
+
+        int grid_x = 1;
+        int grid_y = ny;
+
+        dim3 block(block_x, block_y);
+        dim3 grid(grid_x, grid_y);
+
+        iterate_direction_dirxneg_device <<< grid, block >>> (dirx,devPtr_inLeftImage,devPtr_Costs,devPtr_AccumulatedCosts, nx, ny, disp_range);
+
+        cudaMemcpy(accumulated_costs, devPtr_AccumulatedCosts, costsSize, cudaMemcpyDeviceToHost);
+
+        cudaFree(devPtr_inLeftImage);
+        cudaFree(devPtr_AccumulatedCosts);
+        cudaFree(devPtr_Costs);
     }
     else if ( diry < 0 ) {
         // BOTTOM MOST EDGE
         // Process every pixel along this edge only if dirx ==
         // 0. Otherwise skip the bottom left and bottom right pixel
-        iterate_direction_diryneg(diry,left_image,costs,accumulated_costs, nx, ny, disp_range);
+        int imageSize = nx * ny * sizeof(int);
+        int costsSize = nx*ny*disp_range * sizeof(int);
+
+        int *devPtr_inLeftImage;
+        int *devPtr_AccumulatedCosts;
+        int *devPtr_Costs;
+
+        cudaMalloc((void**)&devPtr_inLeftImage, imageSize);
+        cudaMalloc((void**)&devPtr_AccumulatedCosts, costsSize);
+        cudaMalloc((void**)&devPtr_Costs, costsSize);
+
+        cudaMemcpy(devPtr_inLeftImage, left_image, imageSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_AccumulatedCosts, accumulated_costs, costsSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr_Costs, costs, costsSize, cudaMemcpyHostToDevice);
+
+        int block_x = disp_range;
+        int block_y = 1;
+
+        int grid_x = nx;
+        int grid_y = 1;
+
+        dim3 block(block_x, block_y);
+        dim3 grid(grid_x, grid_y);
+
+        iterate_direction_diryneg_device <<< grid, block >>> (diry,devPtr_inLeftImage,devPtr_Costs,devPtr_AccumulatedCosts, nx, ny, disp_range);
+
+        cudaMemcpy(accumulated_costs, devPtr_AccumulatedCosts, costsSize, cudaMemcpyDeviceToHost);
+
+        cudaFree(devPtr_inLeftImage);
+        cudaFree(devPtr_AccumulatedCosts);
+        cudaFree(devPtr_Costs);
   }
 }
 
@@ -429,9 +550,9 @@ void evaluate_path(const int *prior, const int *local,
 
 __device__ void evaluate_path_device(const int *prior, const int *local,
                                         int path_intensity_gradient, int *curr_cost ,
-                                        const int nx, const int ny, const int disp_range, int d)
+                                        const int nx, const int ny, const int disp_range)
 {
-    //int d = threadIdx.x;
+    int d = threadIdx.x;
     curr_cost[d] = local[d];
 
     int e_smooth = NPP_MAX_32S;
@@ -451,40 +572,12 @@ __device__ void evaluate_path_device(const int *prior, const int *local,
     curr_cost[d] += e_smooth;
 
     int min = NPP_MAX_32S;
-    if (prior[d]<min)
-        min=prior[d];
 
+    for ( int d = 0; d < disp_range; d++ ) {
+        if (prior[d]<min) min=prior[d];
+    }
 
     curr_cost[d]-=min;
-
-    // memcpy(curr_cost, local, sizeof(int)*disp_range);
-
-    // for ( int d = 0; d < disp_range; d++ ) {
-    //     int e_smooth = NPP_MAX_32S;
-    //     for ( int d_p = 0; d_p < disp_range; d_p++ ) {
-    //         if ( d_p - d == 0 ) {
-    //             // No penality
-    //             e_smooth = MMIN(e_smooth,prior[d_p]);
-    //         } else if ( abs(d_p - d) == 1 ) {
-    //             // Small penality
-    //             e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
-    //         } else {
-    //             // Large penality
-    //             e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
-    //     path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
-    //         }
-    //     }
-    //     curr_cost[d] += e_smooth;
-    // }
-
-    // int min = NPP_MAX_32S;
-    // for ( int d = 0; d < disp_range; d++ ) {
-    //     if (prior[d]<min) min=prior[d];
-    // }
-    // for ( int d = 0; d < disp_range; d++ ) {
-    //     curr_cost[d]-=min;
-    // }
-
 }
 
 void create_disparity_view( const int *accumulated_costs , int * disp_image,
@@ -497,9 +590,6 @@ void create_disparity_view( const int *accumulated_costs , int * disp_image,
   }
 }
 }
-
-
-
 
 /*
  * Links:
@@ -540,7 +630,6 @@ void create_disparity_view( const int *accumulated_costs , int * disp_image,
       iterate_direction( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
       inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
   }
-  printf("HOST ->%d\n", dir_accumulated_costs[100]);
 
   dirx=0;
   for(diry=-1; diry<2; diry++) {
@@ -628,7 +717,6 @@ void sgmDevice( const int *h_leftIm, const int *h_rightIm,
       iterate_direction_device( dirx,diry, h_leftIm, costs, dir_accumulated_costs, nx, ny, disp_range);
       inplace_sum_views( accumulated_costs, dir_accumulated_costs, nx, ny, disp_range);
     }
-    printf("DEVICE ->%d\n", dir_accumulated_costs[100]);
 
     dirx=0;
     for(diry=-1; diry<2; diry++) {
