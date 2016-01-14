@@ -90,7 +90,7 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
 
 __device__ void evaluate_path_device(const int *prior, const int *local,
                                         int path_intensity_gradient, int *curr_cost ,
-                                        const int nx, const int ny, const int disp_range);
+                                        const int nx, const int ny, const int disp_range, int d);
 
 
 /* functions code */
@@ -150,23 +150,38 @@ __global__ void iterate_direction_dirxpos_device(const int dirx, const int *left
     const int* costs, int *accumulated_costs,
     const int nx, const int ny, const int disp_range)
 {
-
-    int i = blockIdx.x;
     int j = blockIdx.y;
-    //int id = i + (j * nx); // j * nx - avanca os pixeis de cada linha x
-    int d = threadIdx.x;
+    //int d = threadIdx.x;
 
-    if(i==0) {
-        //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
-        ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
-    }
-    else if (d==0){
-        //printf("D -> i==%d, j==%d, d==%d\n", i, j, d);
-        //printf("D -> %d\n", d);
-        evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
-        &COSTS(i,j,0),
-        abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
-        &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range);
+    for(int i = 0; i < nx; i++ ) {
+
+        // if(i==0) {
+        //     //printf("IF -> i==%d, j==%d, d==%d\n", i, j, d);
+        //     ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
+        // }
+        // else {
+        //     //printf("D -> i==%d, j==%d, d==%d\n", i, j, d);
+        //     //printf("D -> %d\n", d);
+        //     evaluate_path_device(&ACCUMULATED_COSTS(i-dirx,j,0),
+        //     &COSTS(i,j,0),
+        //     abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
+        //     &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range);
+        // }
+
+        if(i==0) {
+              for ( int d = 0; d < disp_range; d++ ) {
+                  ACCUMULATED_COSTS(0,j,d) += COSTS(0,j,d);
+              }
+        }
+        else {
+            for ( int d = 0; d < disp_range; d++ ) {
+              evaluate_path_device( &ACCUMULATED_COSTS(i-dirx,j,0),
+               &COSTS(i,j,0),
+               abs(LEFT_IMAGE(i,j)-LEFT_IMAGE(i-dirx,j)) ,
+               &ACCUMULATED_COSTS(i,j,0), nx, ny, disp_range, d);
+            }
+        }
+
     }
 
 }
@@ -320,7 +335,7 @@ void iterate_direction_device( const int dirx, const int diry, const int *left_i
         int block_x = disp_range;
         int block_y = 1;
 
-        int grid_x = nx;
+        int grid_x = 1;
         int grid_y = ny;
 
         dim3 block(block_x, block_y);
@@ -414,60 +429,61 @@ void evaluate_path(const int *prior, const int *local,
 
 __device__ void evaluate_path_device(const int *prior, const int *local,
                                         int path_intensity_gradient, int *curr_cost ,
-                                        const int nx, const int ny, const int disp_range)
+                                        const int nx, const int ny, const int disp_range, int d)
 {
     //int d = threadIdx.x;
-    // memcpy(&curr_cost[d], &local[d], sizeof(int));
+    curr_cost[d] = local[d];
 
-    // int e_smooth = NPP_MAX_32S;
-    // for ( int d_p = 0; d_p < disp_range; d_p++ ) {
-    //     if ( d_p - d == 0 ) {
-    //         // No penality
-    //         e_smooth = MMIN(e_smooth,prior[d_p]);
-    //     } else if ( abs(d_p - d) == 1 ) {
-    //         // Small penality
-    //         e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
-    //     } else {
-    //         // Large penality
-    //         e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
-    // path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
-    //     }
-    // }
-    // curr_cost[d] += e_smooth;
-
-    // int min = NPP_MAX_32S;
-    // if (prior[d]<min) min=prior[d];
-
-
-    // curr_cost[d]-=min;
-
-    memcpy(curr_cost, local, sizeof(int)*disp_range);
-
-    for ( int d = 0; d < disp_range; d++ ) {
-        int e_smooth = NPP_MAX_32S;
-        for ( int d_p = 0; d_p < disp_range; d_p++ ) {
-            if ( d_p - d == 0 ) {
-                // No penality
-                e_smooth = MMIN(e_smooth,prior[d_p]);
-            } else if ( abs(d_p - d) == 1 ) {
-                // Small penality
-                e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
-            } else {
-                // Large penality
-                e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
-        path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
-            }
+    int e_smooth = NPP_MAX_32S;
+    for ( int d_p = 0; d_p < disp_range; d_p++ ) {
+        if ( d_p - d == 0 ) {
+            // No penality
+            e_smooth = MMIN(e_smooth,prior[d_p]);
+        } else if ( abs(d_p - d) == 1 ) {
+            // Small penality
+            e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
+        } else {
+            // Large penality
+            e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
+    path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
         }
-        curr_cost[d] += e_smooth;
     }
+    curr_cost[d] += e_smooth;
 
     int min = NPP_MAX_32S;
-    for ( int d = 0; d < disp_range; d++ ) {
-        if (prior[d]<min) min=prior[d];
-    }
-    for ( int d = 0; d < disp_range; d++ ) {
-        curr_cost[d]-=min;
-    }
+    if (prior[d]<min)
+        min=prior[d];
+
+
+    curr_cost[d]-=min;
+
+    // memcpy(curr_cost, local, sizeof(int)*disp_range);
+
+    // for ( int d = 0; d < disp_range; d++ ) {
+    //     int e_smooth = NPP_MAX_32S;
+    //     for ( int d_p = 0; d_p < disp_range; d_p++ ) {
+    //         if ( d_p - d == 0 ) {
+    //             // No penality
+    //             e_smooth = MMIN(e_smooth,prior[d_p]);
+    //         } else if ( abs(d_p - d) == 1 ) {
+    //             // Small penality
+    //             e_smooth = MMIN(e_smooth,prior[d_p]+PENALTY1);
+    //         } else {
+    //             // Large penality
+    //             e_smooth = MMIN(e_smooth,prior[d_p] + MMAX(PENALTY1,
+    //     path_intensity_gradient ? PENALTY2/path_intensity_gradient : PENALTY2));
+    //         }
+    //     }
+    //     curr_cost[d] += e_smooth;
+    // }
+
+    // int min = NPP_MAX_32S;
+    // for ( int d = 0; d < disp_range; d++ ) {
+    //     if (prior[d]<min) min=prior[d];
+    // }
+    // for ( int d = 0; d < disp_range; d++ ) {
+    //     curr_cost[d]-=min;
+    // }
 
 }
 
